@@ -31,7 +31,7 @@ print(f"📁 Raíz del proyecto: {PROJECT_ROOT}")
 sys.path.append(PROJECT_ROOT)
 
 # Configurar Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'graficagyg_backend.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'GraficaGyG_backend.settings')
 
 # =============================================================================
 # CONFIGURACIÓN DJANGO
@@ -62,7 +62,7 @@ except Exception as e:
 class DataLoader:
     def __init__(self):
         # Ruta al Excel - funciona en ambos entornos
-        self.excel_file = os.path.join(PROJECT_ROOT, 'PoblacionTablas.xlsx')
+        self.excel_file = os.path.join(PROJECT_ROOT, 'backendGyG/PoblacionTablas.xlsx')
         
         self.stats = {
             'categorias': 0, 'subcategorias': 0, 'marcas': 0,
