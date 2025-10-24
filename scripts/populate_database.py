@@ -31,7 +31,7 @@ print(f"📁 Raíz del proyecto: {PROJECT_ROOT}")
 sys.path.append(PROJECT_ROOT)
 
 # Configurar Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tu_proyecto.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'graficagyg_backend.settings')
 
 # =============================================================================
 # CONFIGURACIÓN DJANGO
