@@ -1,7 +1,13 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+import datetime
 from django.urls import reverse
+from PIL import Image
+import os
+from django.conf import settings
+import io
+from django.core.files.base import ContentFile
 
 class BaseModel(models.Model):
     activo = models.BooleanField(default=True)
@@ -183,7 +189,11 @@ class UserProfile(BaseModel):
         if self.user:
             return f"Perfil de {self.user.username}"
         return "Perfil sin usuario asignado"
-
+    
+    def es_administrador(self):
+        """Verifica si el usuario tiene rol de administrador"""
+        return self.roles.filter(rol__codigo_rol='ADMIN').exists()
+    
 class UserRol(BaseModel):
     """Modelo para relación muchos a muchos entre UserProfile y Rol"""
     user_rol_id = models.AutoField(primary_key=True)
@@ -251,10 +261,82 @@ class Cargo(BaseModel):
         db_table = 'cargos'
     def __str__(self):
         return f"Cargo #{self.cargo_id}"
+  
+# ============= MODELOS DE PRODUCTOS =============
+class Marca(BaseModel):
+    marca_id = models.AutoField(primary_key=True)
+    nombre_marca = models.CharField(max_length=30)
+    logo_marca = models.ImageField(upload_to='marcas/', null=True, blank=True)
+    class Meta:
+        db_table = 'marcas'
+    def __str__(self):
+        return self.nombre_marca
 
+class UnidadMedida(BaseModel):
+    unidad_medida_id = models.AutoField(primary_key=True)
+    nombre_unidad_medida = models.CharField(max_length=20)
+    abreviatura = models.CharField(max_length=5, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'unidades_medida'
+
+    def __str__(self):
+        return self.nombre_unidad_medida
+    
+class Proveedor(BaseModel):
+    proveedor_id = models.AutoField(primary_key=True)
+    nombre_proveedor = models.CharField(max_length=100)
+    rut_proveedor = models.CharField(max_length=15, null=True, blank=True)
+    contacto = models.CharField(max_length=100, null=True, blank=True)
+    telefono = models.CharField(max_length=15, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'proveedores'
+
+    def __str__(self):
+        return self.nombre_proveedor
+    
+class Categoria(BaseModel):
+    categoria_id = models.AutoField(primary_key=True)
+    nombre_categoria = models.CharField(max_length=50)
+    descripcion = models.TextField(null=True, blank=True)
+    imagen_categoria = models.ImageField(upload_to='categorias/', null=True, blank=True)
+    es_popular = models.BooleanField(default=False)
+    orden_popularidad = models.IntegerField(default=0)
+    
+    class Meta:
+        db_table = 'categorias'
+        ordering = ['-es_popular', 'orden_popularidad', 'nombre_categoria']
+
+    def __str__(self):
+        return self.nombre_categoria
+
+    def productos_destacados(self, limit=4):
+        return Producto.objects.filter(
+            subcategoria__categoria=self,
+            activo=True,
+            es_destacado=True
+        )[:limit]
+    
+class Subcategoria(BaseModel):
+    subcategoria_id = models.AutoField(primary_key=True)
+    nombre_subcategoria = models.CharField(max_length=50)
+    descripcion = models.TextField(null=True, blank=True)
+    categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE, related_name='subcategorias')
+    imagen_subcategoria = models.ImageField(upload_to='subcategorias/', null=True, blank=True)
+    
+    class Meta:
+        db_table = 'subcategorias'
+        ordering = ['nombre_subcategoria']
+
+    def __str__(self):
+        return f"{self.categoria.nombre_categoria} - {self.nombre_subcategoria}"
+
+# ============= OTROS MODELOS ============= 
 class Cliente(BaseModel):
     cliente_id = models.AutoField(primary_key=True)
-    persona = models.ForeignKey(Persona, on_delete=models.SET_NULL, null=True, blank=True)
+    user_profile = models.ForeignKey(UserProfile, on_delete=models.SET_NULL, null=True, blank=True)
     nombre_cliente = models.CharField(max_length=100, blank=True, null=True)
     telefono = models.CharField(max_length=20, unique=True)
     ultima_interaccion = models.DateTimeField(auto_now=True)
@@ -263,227 +345,16 @@ class Cliente(BaseModel):
 
     def __str__(self):
         return f'Cliente: {self.nombre_cliente or self.telefono}'
-
-class Categoria(BaseModel):
-    categoria_id = models.AutoField(primary_key=True)
-    nombre_categoria = models.CharField(max_length=30)
-    es_popular = models.BooleanField(default=False)
-    codigo_popular = models.IntegerField(default=0, null=True, blank=True)
-    def productos_destacados(self, limit=4):
-        return Producto.objects.filter(
-            subcategoria__categoria=self,
-            activo=True,
-            es_destacado=True
-        )[:limit]
-    class Meta:
-        db_table = 'categorias'
-    def __str__(self):
-        return self.nombre_categoria
-
-class Subcategoria(BaseModel):
-    subcategoria_id = models.AutoField(primary_key=True)
-    nombre_subcategoria = models.CharField(max_length=30)
-    categoria = models.ForeignKey(Categoria, null=True, blank=True, on_delete=models.SET_NULL)
-    class Meta:
-        db_table = 'subcategorias'
-    def __str__(self):
-        return self.nombre_subcategoria
-
-class UnidadMedida(BaseModel):
-    unidad_medida_id = models.AutoField(primary_key=True)
-    nombre_unidad_medida = models.CharField(max_length=20)
-    class Meta:
-        db_table = 'unidades_medida'
-    def __str__(self):
-        return self.nombre_unidad_medida
-
-class Proveedor(BaseModel):
-    proveedor_id = models.AutoField(primary_key=True)
-    nombre_proveedor = models.CharField(max_length=30)
-    class Meta:
-        db_table = 'proveedores'
-    def __str__(self):
-        return self.nombre_proveedor
-    
-class Marca(BaseModel):
-    marca_id = models.AutoField(primary_key=True)
-    nombre_marca = models.CharField(max_length=30)
-    class Meta:
-        db_table = 'marcas'
-    def __str__(self):
-        return self.nombre_marca
-
-class Iva(BaseModel):
-    iva_id = models.AutoField(primary_key=True)
-    valor_iva = models.DecimalField(max_digits=10, decimal_places=2)
-    pais = models.ForeignKey(Pais, null=True, blank=True, on_delete=models.SET_NULL)
-    class Meta:
-        db_table = 'ivas'
-
-def producto_imagen_path(instance, filename):
-    # Extraemos el ID del producto
-    producto_id = instance.producto.producto_id if instance.producto else None
-    
-    # Si tenemos un ID de producto, lo usamos para crear la carpeta
-    if producto_id:
-        # No usamos la extensión original, siempre usaremos PNG
-        # El nombre será simplemente [imagen_id]_[producto_id].png
-        if instance.pk:  # Si ya tenemos un ID de imagen
-            new_filename = f"{instance.pk}_{producto_id}.png"
-        else:
-            # Para nuevas imágenes, usamos un placeholder temporal
-            # que será actualizado después en el método save()
-            new_filename = f"temp_{producto_id}.png"
-        
-        # Usamos posix path (forward slash) para asegurar consistencia
-        return f'productos/{producto_id}/{new_filename}'
-    
-    # Si no hay producto_id, guardamos en una carpeta temporal
-    return f'productos/temp/{filename}'
-
-class Producto(BaseModel):
-    producto_id = models.AutoField(primary_key=True)
-    nombre_producto = models.CharField(max_length=50)
-    detalle_producto = models.TextField(null=True, blank=True)
-    caracteristicas = models.TextField(null=True, blank=True)
-    marca = models.ForeignKey(Marca, null=True, blank=True, on_delete=models.SET_NULL)
-    modelo = models.CharField(max_length=50, null=True, blank=True)
-    color = models.CharField(max_length=30, null=True, blank=True)
-    es_oferta = models.BooleanField(default=False, null=True, blank=True)
-    precio_oferta = models.IntegerField(default=0, null=True, blank=True)
-    es_destacado = models.BooleanField(default=False)
-    medida = models.CharField(max_length=100, null=True, blank=True)
-    unidad_medida = models.ForeignKey(UnidadMedida, null=True, blank=True, on_delete=models.SET_NULL)
-    subcategoria = models.ForeignKey(Subcategoria, null=True, blank=True, on_delete=models.SET_NULL)
-    unidad_por_mayor = models.IntegerField(default=0, null=True, blank=True)
-    valor_unidad_por_mayor = models.IntegerField(default=0, null=True, blank=True)
-    precio_neto = models.IntegerField(default=0, null=True, blank=True)
-    precio_venta = models.IntegerField(default=0, null=True, blank=True)
-    iva = models.BooleanField(default=True, null=True, blank=True)
-    impuesto_10pc = models.BooleanField(default=False, null=True, blank=True)
-    es_insumo = models.BooleanField(default=False, null=True, blank=True)
-    proveedor = models.ForeignKey(Proveedor, null=True, blank=True, on_delete=models.SET_NULL)
-    stock = models.PositiveIntegerField(default=0, null=True, blank=True)
-    #Atributo en el cual donde debería ir el producto en bodega
-    ubicacion_estante_bodega = models.CharField(max_length=100, null=True, blank=True)
-    class Meta:
-        db_table = 'productos'
-
-    def get_absolute_url(self):
-        """Retorna la URL del detalle del producto"""
-        return reverse('productos:detalle_producto', args=[str(self.producto_id)])
-    
-    def __str__(self):
-        return self.nombre_producto
-
-class ImagenProducto(BaseModel):
-    imagen_producto_id = models.AutoField(primary_key=True)
-    imagen = models.ImageField(upload_to=producto_imagen_path, null=True, blank=True)
-    producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, related_name='imagenes')
-    
-    class Meta:
-        db_table = 'imagenes_productos'
-    
-    def __str__(self):
-        return f"Imagen de {self.producto.nombre_producto}" if self.producto else "Imagen sin producto asociado"
-    
-    def save(self, *args, **kwargs):
-        # Para nuevas instancias, primero guardamos para obtener un ID
-        is_new = not self.pk
-        super(ImagenProducto, self).save(*args, **kwargs)
-        
-        # Si es una instancia nueva o tenemos una imagen
-        if self.imagen:
-            from PIL import Image
-            import os
-            from django.conf import settings
-            import io
-            from django.core.files.base import ContentFile
-            
-            # Procesamos la imagen
-            try:
-                # Obtenemos la ruta completa de la imagen en el sistema de archivos
-                img_path = os.path.join(settings.MEDIA_ROOT, self.imagen.name)
-                
-                # Verificamos si el archivo existe
-                if os.path.exists(img_path):
-                    # Abrimos la imagen
-                    img = Image.open(img_path)
-                    
-                    # Redimensionar para tamaños adecuados
-                    max_size = (800, 600)  # Tamaño adecuado para visualización
-                    img.thumbnail(max_size, Image.LANCZOS)
-                    
-                    # Si la imagen no es PNG, la convertimos
-                    if img.format != 'PNG':
-                        # Creamos un buffer para la imagen convertida
-                        buffer = io.BytesIO()
-                        # Guardamos en formato PNG
-                        img.save(buffer, format='PNG')
-                        # Volvemos al inicio del buffer
-                        buffer.seek(0)
-                        
-                        # Construimos el nuevo nombre de archivo
-                        producto_id = self.producto.producto_id if self.producto else 0
-                        new_filename = f"{self.pk}_{producto_id}.png"
-                        
-                        # Construimos la ruta de directorio (asegurando forward slashes)
-                        dir_path = f"productos/{producto_id}"
-                        
-                        # Eliminamos el archivo anterior
-                        self.imagen.delete(save=False)
-                        
-                        # Guardamos la nueva imagen
-                        self.imagen.save(
-                            f"{dir_path}/{new_filename}",
-                            ContentFile(buffer.getvalue()),
-                            save=False
-                        )
-                        
-                        # Aseguramos que la ruta usa forward slashes
-                        self.imagen.name = self.imagen.name.replace('\\', '/')
-                        
-                        # Guardamos solo el campo de imagen actualizado
-                        super(ImagenProducto, self).save(update_fields=['imagen'])
-                    elif is_new or 'temp_' in self.imagen.name:
-                        # Si es una imagen nueva o tiene nombre temporal pero ya es PNG
-                        # Solo renombramos para asegurar el formato correcto
-                        producto_id = self.producto.producto_id if self.producto else 0
-                        new_filename = f"{self.pk}_{producto_id}.png"
-                        
-                        # Construimos la ruta de directorio
-                        dir_path = f"productos/{producto_id}"
-                        
-                        # Creamos un buffer para la imagen
-                        buffer = io.BytesIO()
-                        img.save(buffer, format='PNG')
-                        buffer.seek(0)
-                        
-                        # Eliminamos el archivo anterior
-                        self.imagen.delete(save=False)
-                        
-                        # Guardamos con el nuevo nombre
-                        self.imagen.save(
-                            f"{dir_path}/{new_filename}",
-                            ContentFile(buffer.getvalue()),
-                            save=False
-                        )
-                        
-                        # Aseguramos que la ruta usa forward slashes
-                        self.imagen.name = self.imagen.name.replace('\\', '/')
-                        
-                        # Guardamos solo el campo de imagen actualizado
-                        super(ImagenProducto, self).save(update_fields=['imagen'])
-            except Exception as e:
-                print(f"Error procesando imagen: {e}")
     
 class Carrusel(BaseModel):
     carrusel_id = models.AutoField(primary_key=True)
     titulo = models.CharField(max_length=100, null=True, blank=True)
+    subtitulo = models.CharField(max_length=300, null=True, blank=True)
     imagen = models.ImageField(upload_to='carruseles/', null=True, blank=True)
     texto_boton = models.CharField(max_length=30, null=True, blank=True, default='Ver más')
     descripcion = models.TextField(null=True, blank=True)
     link_boton = models.URLField(null=True, blank=True)
+    orden = models.PositiveIntegerField(default=0)
 
     color_fondo = models.CharField(max_length=20, null=True, blank=True, default='#2563eb')  # Azul por defecto
 
@@ -492,54 +363,7 @@ class Carrusel(BaseModel):
 
     def __str__(self):
         return self.titulo
-
-# models.py (agregar estos modelos al final del archivo)
-
-class Pedido(BaseModel):
-    pedido_id = models.AutoField(primary_key=True)
-    cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
-    user_profile = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
-    fecha_pedido = models.DateTimeField(auto_now_add=True)
-    estado = models.CharField(max_length=20, default='pendiente', choices=[
-        ('pendiente', 'Pendiente'),
-        ('confirmado', 'Confirmado'),
-        ('en_proceso', 'En Proceso'),
-        ('enviado', 'Enviado'),
-        ('entregado', 'Entregado'),
-        ('cancelado', 'Cancelado')
-    ])
-    total = models.IntegerField(default=0)
-    direccion_entrega = models.ForeignKey('Direccion', on_delete=models.SET_NULL, null=True, blank=True)
     
-    class Meta:
-        db_table = 'pedidos'
-        verbose_name = 'Pedido'
-        verbose_name_plural = 'Pedidos'
-
-    def __str__(self):
-        return f"Pedido #{self.pedido_id} - {self.cliente}"
-
-class DetallePedido(BaseModel):
-    detalle_pedido_id = models.AutoField(primary_key=True)
-    pedido = models.ForeignKey('Pedido', on_delete=models.CASCADE, related_name='detalles')
-    producto = models.ForeignKey('Producto', on_delete=models.SET_NULL, null=True)
-    cantidad = models.PositiveIntegerField(default=1)
-    precio_unitario = models.IntegerField(default=0)
-    subtotal = models.IntegerField(default=0)
-    
-    class Meta:
-        db_table = 'detalles_pedido'
-        verbose_name = 'Detalle de Pedido'
-        verbose_name_plural = 'Detalles de Pedido'
-
-    def __str__(self):
-        return f"Detalle #{self.detalle_pedido_id} - Pedido #{self.pedido.pedido_id}"
-
-    def save(self, *args, **kwargs):
-        # Calcular subtotal automáticamente antes de guardar
-        self.subtotal = self.cantidad * self.precio_unitario
-        super().save(*args, **kwargs)
-
 class PreguntaFrecuente(BaseModel):
     pregunta_frecuente_id = models.AutoField(primary_key=True)
     pregunta = models.CharField(max_length=255)
@@ -562,6 +386,17 @@ class PreguntaFrecuente(BaseModel):
     def __str__(self):
         return self.pregunta
 
+    @property
+    def subtotal(self):
+        return self.cantidad * self.precio_unitario
+
+    def save(self, *args, **kwargs):
+        # Establecer el precio unitario desde el producto si no está establecido
+        if not self.precio_unitario and self.producto:
+            self.precio_unitario = self.producto.precio_venta
+        super().save(*args, **kwargs)
+
+# ============= MODELOS DE CARRITO =============
 class Carrito(BaseModel):
     carrito_id = models.AutoField(primary_key=True)
     cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
@@ -581,6 +416,14 @@ class Carrito(BaseModel):
             return f"Carrito de {self.user_profile}"
         else:
             return f"Carrito #{self.carrito_id} (Sesión: {self.sesion_id})"
+    def __str__(self):
+        return f"Carrito de {self.user.username if self.user else 'Anónimo'}"
+
+    def total(self):
+        return sum(item.subtotal() for item in self.items.all())
+
+    def cantidad_items(self):
+        return sum(item.cantidad for item in self.items.all())
 
     @property
     def total(self):
@@ -611,3 +454,584 @@ class ItemCarrito(BaseModel):
         if not self.precio_unitario and self.producto:
             self.precio_unitario = self.producto.precio_venta
         super().save(*args, **kwargs)
+
+class Terminacion(BaseModel):
+    """Representa una terminación/material con precio específico para un producto."""
+    terminacion_id = models.AutoField(primary_key=True)
+    nombre_terminacion = models.CharField(max_length=100)
+    descripcion = models.TextField(null=True, blank=True)
+    # FOREIGN KEY: Esta terminación pertenece a un producto específico
+    producto = models.ForeignKey(
+        'Producto',
+        on_delete=models.CASCADE,
+        related_name='terminaciones'
+    )
+    # Precio específico de esta terminación para este producto
+    precio = models.PositiveIntegerField(default=0, null=True, blank=True,
+       help_text="Precio final con esta terminación"
+    )
+    es_predeterminado = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'terminaciones'
+        verbose_name = 'Terminación'
+        verbose_name_plural = 'Terminaciones'
+        ordering = ['orden', 'nombre_terminacion']
+
+    def __str__(self):
+        return f"{self.nombre_terminacion} - {self.producto.nombre_producto} (${self.precio})"
+
+class TiempoProduccion(BaseModel):
+    """Representa un tiempo de producción con precio específico para un producto."""
+    tiempo_produccion_id = models.AutoField(primary_key=True)
+    nombre_tiempo = models.CharField(max_length=100)
+    descripcion = models.TextField(null=True, blank=True)
+    # FOREIGN KEY: Este tiempo pertenece a un producto específico
+    producto = models.ForeignKey(
+        'Producto',
+        on_delete=models.CASCADE,
+        related_name='tiempos_produccion'
+    )
+    dias_estimados = models.PositiveIntegerField(help_text="Días estimados de producción")
+    # Precio específico para este tiempo de producción en este producto
+    precio = models.PositiveIntegerField(default=0, null=True, blank=True,
+        help_text="Precio final con este tiempo de producción"
+    )
+    es_predeterminado = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'tiempos_produccion'
+        verbose_name = 'Tiempo de Producción'
+        verbose_name_plural = 'Tiempos de Producción'
+        ordering = ['orden', 'dias_estimados']
+
+    def __str__(self):
+        return f"{self.nombre_tiempo} ({self.dias_estimados} días) - {self.producto.nombre_producto} (${self.precio})"
+
+class Acabado(BaseModel):
+    """Representa las opciones de acabado (pueden ser compartidas entre productos)."""
+    acabado_id = models.AutoField(primary_key=True)
+    nombre_acabado = models.CharField(max_length=100)
+    descripcion = models.TextField(null=True, blank=True)
+    costo_adicional = models.PositiveIntegerField(default=0, null=True, blank=True,
+        help_text="Costo adicional por este acabado"
+    )
+    
+    class Meta:
+        db_table = 'acabados'
+        verbose_name = 'Acabado'
+        verbose_name_plural = 'Acabados'
+
+    def __str__(self):
+        return f"{self.nombre_acabado} (+${self.costo_adicional})"
+
+class ProductoAcabado(BaseModel):
+    """Tabla intermedia para relacionar productos con acabados disponibles."""
+    producto = models.ForeignKey(
+        'Producto',
+        on_delete=models.CASCADE,
+        related_name='producto_acabados'
+    )
+    acabado = models.ForeignKey(
+        Acabado,
+        on_delete=models.CASCADE,
+        related_name='producto_acabados'
+    )
+    es_predeterminado = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'productos_acabados'
+        unique_together = ['producto', 'acabado']
+        ordering = ['orden'] 
+        verbose_name = 'Acabado del Producto'
+        verbose_name_plural = 'Acabados del Producto'
+
+    def __str__(self):
+        return f"{self.producto.nombre_producto} - {self.acabado.nombre_acabado}"
+
+class Producto(BaseModel):
+    """Modelo principal de Producto."""
+    producto_id = models.AutoField(primary_key=True)
+    nombre_producto = models.CharField(max_length=100)
+    descripcion_corta = models.CharField(max_length=200, null=True, blank=True)
+    detalle_producto = models.TextField(null=True, blank=True)
+    
+    # Características como JSON o texto separado por líneas
+    caracteristicas = models.TextField(
+        null=True, 
+        blank=True,
+        help_text="Una característica por línea"
+    )
+    
+    # Especificaciones técnicas
+    especificaciones = models.JSONField(
+        null=True, 
+        blank=True,
+        help_text="Diccionario con especificaciones técnicas"
+    )
+    
+    # Relaciones
+    marca = models.ForeignKey('Marca', null=True, blank=True, on_delete=models.SET_NULL, related_name='productos')
+    subcategoria = models.ForeignKey('Subcategoria', on_delete=models.CASCADE, related_name='productos')
+    proveedor = models.ForeignKey('Proveedor', null=True, blank=True, on_delete=models.SET_NULL, related_name='productos')
+    unidad_medida = models.ForeignKey('UnidadMedida', null=True, blank=True, on_delete=models.SET_NULL)
+    
+    # Relación Many-to-Many con Acabados (los acabados sí se comparten entre productos)
+    acabados = models.ManyToManyField(
+        Acabado,
+        through='ProductoAcabado',
+        related_name='productos',
+        blank=True
+    )
+    
+    # Atributos del producto
+    modelo = models.CharField(max_length=50, null=True, blank=True)
+    color = models.CharField(max_length=30, null=True, blank=True)
+    medida = models.CharField(max_length=100, null=True, blank=True)
+    sku = models.CharField(max_length=50, null=True, blank=True, unique=True)
+    
+    # Precios e impuestos
+    precio_neto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    precio_venta = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    iva = models.BooleanField(default=True)
+    impuesto_adicional = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Porcentaje de impuesto adicional")
+    
+    # Ofertas
+    es_oferta = models.BooleanField(default=False)
+    precio_oferta = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    fecha_inicio_oferta = models.DateTimeField(null=True, blank=True)
+    fecha_fin_oferta = models.DateTimeField(null=True, blank=True)
+    
+    # Categorización especial
+    es_destacado = models.BooleanField(default=False)
+    es_novedad = models.BooleanField(default=False)
+    es_solucion_inteligente = models.BooleanField(default=False)
+    es_insumo = models.BooleanField(default=False)
+    
+    # Stock y logística
+    stock = models.PositiveIntegerField(default=0)
+    stock_minimo = models.PositiveIntegerField(default=5, help_text="Alerta cuando el stock sea menor")
+    ubicacion_bodega = models.CharField(max_length=100, null=True, blank=True)
+    
+    # Ventas al por mayor
+    unidad_por_mayor = models.IntegerField(default=0, help_text="Cantidad mínima para precio por mayor")
+    precio_por_mayor = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Peso y dimensiones (para envíos)
+    peso_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    largo_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    ancho_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    alto_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    
+    # Metadata
+    vistas = models.PositiveIntegerField(default=0)
+    ventas_totales = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'productos'
+        ordering = ['-es_destacado', '-es_novedad', 'nombre_producto']
+
+    def __str__(self):
+        return self.nombre_producto
+
+    def get_absolute_url(self):
+        return reverse('productos:detalle_producto', args=[str(self.producto_id)])
+
+    def precio_final(self):
+        """Retorna el precio final considerando ofertas"""
+        if self.es_oferta and self.precio_oferta:
+            return self.precio_oferta
+        return self.precio_venta
+
+    def tiene_stock(self, cantidad=1):
+        """Verifica si hay stock disponible"""
+        return self.stock >= cantidad
+
+    def incrementar_vistas(self):
+        """Incrementa el contador de vistas"""
+        self.vistas += 1
+        self.save(update_fields=['vistas'])
+    
+    # ===== MÉTODOS PARA TERMINACIONES =====
+    
+    def get_terminaciones_disponibles(self):
+        """Obtiene todas las terminaciones activas de este producto."""
+        return self.terminaciones.filter(activo=True).order_by('orden', 'nombre_terminacion')
+    
+    def get_terminacion_predeterminada(self):
+        """Obtiene la terminación marcada como predeterminada."""
+        try:
+            return self.terminaciones.filter(activo=True, es_predeterminada=True).first()
+        except Terminacion.DoesNotExist:
+            return self.terminaciones.filter(activo=True).first()
+    
+    def get_precio_por_terminacion(self, terminacion_id):
+        """Obtiene el precio según la terminación seleccionada."""
+        try:
+            terminacion = self.terminaciones.get(terminacion_id=terminacion_id, activo=True)
+            return terminacion.precio
+        except Terminacion.DoesNotExist:
+            return self.precio_venta
+    
+    # ===== MÉTODOS PARA TIEMPOS DE PRODUCCIÓN =====
+    
+    def get_tiempos_produccion_disponibles(self):
+        """Obtiene todos los tiempos de producción activos de este producto."""
+        return self.tiempos_produccion.filter(activo=True).order_by('orden', 'dias_estimados')
+    
+    def get_tiempo_produccion_predeterminado(self):
+        """Obtiene el tiempo de producción marcado como predeterminado."""
+        try:
+            return self.tiempos_produccion.filter(activo=True, es_predeterminado=True).first()
+        except TiempoProduccion.DoesNotExist:
+            return self.tiempos_produccion.filter(activo=True).first()
+    
+    def get_precio_por_tiempo_produccion(self, tiempo_id):
+        """Obtiene el precio según el tiempo de producción seleccionado."""
+        try:
+            tiempo = self.tiempos_produccion.get(tiempo_produccion_id=tiempo_id, activo=True)
+            return tiempo.precio
+        except TiempoProduccion.DoesNotExist:
+            return self.precio_venta
+    
+    # ===== MÉTODOS PARA ACABADOS =====
+    
+    def get_acabados_disponibles(self):
+        """Obtiene todos los acabados disponibles para este producto."""
+        return self.producto_acabados.select_related('acabado').filter(
+            acabado__activo=True
+        ).order_by('orden')
+    
+    def get_acabado_predeterminado(self):
+        """Obtiene el acabado marcado como predeterminado."""
+        try:
+            return self.producto_acabados.filter(
+                acabado__activo=True, 
+                es_predeterminado=True
+            ).first()
+        except ProductoAcabado.DoesNotExist:
+            return self.producto_acabados.filter(acabado__activo=True).first()
+    # ===== CÁLCULO DE PRECIO FINAL =====  
+    def calcular_precio_personalizado(self, ancho_cm, alto_cm, terminacion_id, tiempo_produccion_id, cantidad=1, acabado_ids=None):
+        """
+        Calcula el precio final del producto personalizado según la fórmula:
+        precio_unitario = (ancho_cm × alto_cm × precio_m2_material × precio_tiempo_produccion) / 10000
+        precio_total = precio_unitario × cantidad
+        
+        Args:
+            ancho_cm: Ancho en centímetros
+            alto_cm: Alto en centímetros
+            terminacion_id: ID de la terminación (material)
+            tiempo_produccion_id: ID del tiempo de producción
+            cantidad: Cantidad de unidades
+            acabado_ids: Lista de IDs de acabados (no afecta precio, solo información)
+        
+        Returns:
+            dict con desglose de precios y validaciones
+        """
+        try:
+            # Obtener terminación (material con precio por 100cm)
+            try:
+                terminacion = self.terminaciones.get(
+                    terminacion_id=terminacion_id,
+                    activo=True
+                )
+            except Terminacion.DoesNotExist:
+                return {
+                    'error': True,
+                    'mensaje': f'Terminación con ID {terminacion_id} no encontrada o inactiva'
+                }
+            
+            # Obtener tiempo de producción (factor multiplicador)
+            try:
+                tiempo = self.tiempos_produccion.get(
+                    tiempo_produccion_id=tiempo_produccion_id,
+                    activo=True
+                )
+            except TiempoProduccion.DoesNotExist:
+                return {
+                    'error': True,
+                    'mensaje': f'Tiempo de producción con ID {tiempo_produccion_id} no encontrado o inactivo'
+                }
+            
+            # Validar dimensiones
+            if ancho_cm <= 0 or alto_cm <= 0:
+                return {
+                    'error': True,
+                    'mensaje': 'Las dimensiones deben ser mayores a 0'
+                }
+            
+            # Validar cantidad
+            if cantidad <= 0:
+                return {
+                    'error': True,
+                    'mensaje': 'La cantidad debe ser mayor a 0'
+                }
+            
+            # Validar stock
+            if not self.tiene_stock(cantidad):
+                return {
+                    'error': True,
+                    'mensaje': f'Stock insuficiente. Disponibles: {self.stock}'
+                }
+            
+            # FÓRMULA: (ancho × alto × precio_material × precio_tiempo) / 10000
+            # donde precio_material es por 100cm (no por m²)
+            precio_unitario = (ancho_cm * alto_cm * terminacion.precio * tiempo.precio) // 10000
+            
+            # Si el resultado es 0 (porque es muy pequeño), al menos cobrar 1000 (ajustable)
+            if precio_unitario < 1000:
+                precio_unitario = 1000
+            
+            # Precio total por cantidad
+            precio_total = precio_unitario * cantidad
+            
+            # Validar acabados si se proporcionan
+            costo_acabados = 0
+            acabados_info = []
+            if acabado_ids:
+                acabados_disponibles = self.producto_acabados.filter(
+                    acabado_id__in=acabado_ids,
+                    acabado__activo=True
+                ).select_related('acabado')
+                
+                if acabados_disponibles.count() != len(acabado_ids):
+                    return {
+                        'error': True,
+                        'mensaje': 'Uno o más acabados no válidos o inactivos'
+                    }
+                
+                for pa in acabados_disponibles:
+                    # Los acabados NO afectan el precio según los requerimientos
+                    # pero se almacenan como información
+                    acabados_info.append({
+                        'acabado_id': pa.acabado.acabado_id,
+                        'nombre_acabado': pa.acabado.nombre_acabado,
+                        'costo_adicional': pa.acabado.costo_adicional
+                    })
+            
+            return {
+                'error': False,
+                'precio_unitario': precio_unitario,
+                'precio_total': precio_total,
+                'cantidad': cantidad,
+                'ancho_cm': ancho_cm,
+                'alto_cm': alto_cm,
+                'terminacion': {
+                    'terminacion_id': terminacion.terminacion_id,
+                    'nombre_terminacion': terminacion.nombre_terminacion,
+                    'precio_por_100cm': terminacion.precio
+                },
+                'tiempo_produccion': {
+                    'tiempo_produccion_id': tiempo.tiempo_produccion_id,
+                    'nombre_tiempo': tiempo.nombre_tiempo,
+                    'dias_estimados': tiempo.dias_estimados,
+                    'factor_precio': float(tiempo.precio)
+                },
+                'acabados': acabados_info,
+                'desglose': {
+                    'base_calculo': f'({ancho_cm} × {alto_cm} × {terminacion.precio} × {tiempo.precio}) / 10000 = {precio_unitario}',
+                    'total': f'{precio_unitario} × {cantidad} = {precio_total}'
+                }
+            }
+        
+        except Exception as e:
+            return {
+                'error': True,
+                'mensaje': f'Error al calcular precio: {str(e)}'
+            }
+    
+    def tiene_personalizaciones(self):
+        """Verifica si el producto tiene opciones de personalización."""
+        return (
+            self.terminaciones.filter(activo=True).exists() or
+            self.tiempos_produccion.filter(activo=True).exists() or
+            self.acabados.filter(activo=True).exists()
+        )
+    
+
+def producto_imagen_path(instance, filename):
+    """
+    Genera la ruta: productos/{producto_id}/{imagen_id}.png
+    El nombre del archivo será el ID de la imagen en la BD
+    """
+    producto_id = instance.producto.producto_id if instance.producto else 'temp'
+    
+    # Si ya tenemos el ID de la imagen (cuando se actualiza)
+    if instance.pk:
+        return f'productos/{producto_id}/{instance.pk}.png'
+    
+    # Para nuevas imágenes, usamos placeholder temporal
+    # Se renombrará en el método save()
+    return f'productos/{producto_id}/temp_{filename}'
+
+class ImagenProducto(BaseModel):
+    imagen_producto_id = models.AutoField(primary_key=True)
+    imagen = models.ImageField(upload_to=producto_imagen_path)
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='imagenes')
+    es_principal = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=0)
+    alt_text = models.CharField(max_length=200, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'imagenes_productos'
+        ordering = ['-es_principal', 'orden']
+
+    def __str__(self):
+        return f"Imagen de {self.producto.nombre_producto}"
+
+    def save(self, *args, **kwargs):
+        es_nueva = self.pk is None
+        
+        # Guardar primero para obtener el PK
+        super(ImagenProducto, self).save(*args, **kwargs)
+        
+        # Si es nueva imagen y tiene archivo
+        if es_nueva and self.imagen:
+            try:
+                # Obtener ruta actual del archivo temporal
+                old_path = self.imagen.path
+                
+                if os.path.exists(old_path):
+                    # Procesar la imagen
+                    img = Image.open(old_path)
+                    
+                    # Convertir a RGB si es necesario
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = background
+                    
+                    # Redimensionar
+                    max_size = (800, 600)
+                    img.thumbnail(max_size, Image.Lanczos)
+                    
+                    # Crear nueva ruta con el ID de la imagen
+                    producto_id = self.producto.producto_id
+                    new_filename = f'{self.pk}.png'
+                    new_path = os.path.join(settings.MEDIA_ROOT, f'productos/{producto_id}/{new_filename}')
+                    
+                    # Crear directorio si no existe
+                    os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                    
+                    # Guardar imagen procesada con nuevo nombre
+                    img.save(new_path, 'PNG', optimize=True, quality=85)
+                    
+                    # Eliminar archivo temporal si tiene nombre diferente
+                    if old_path != new_path and os.path.exists(old_path):
+                        os.remove(old_path)
+                    
+                    # Actualizar el campo imagen con la nueva ruta
+                    self.imagen.name = f'productos/{producto_id}/{new_filename}'
+                    super(ImagenProducto, self).save(update_fields=['imagen'])
+                    
+            except Exception as e:
+                print(f"Error procesando imagen {self.pk}: {e}")
+
+# ============= MODELOS DE PEDIDOS Y DESPACHO =============
+class EstadoPedido(models.TextChoices):
+    PENDIENTE = 'PENDIENTE', 'Pendiente'
+    CONFIRMADO = 'CONFIRMADO', 'Confirmado'
+    PREPARANDO = 'PREPARANDO', 'Preparando'
+    EN_CAMINO = 'EN_CAMINO', 'En Camino'
+    ENTREGADO = 'ENTREGADO', 'Entregado'
+    CANCELADO = 'CANCELADO', 'Cancelado'
+
+class Pedido(BaseModel):
+    pedido_id = models.AutoField(primary_key=True)
+    cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
+    user_profile = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
+    fecha_pedido = models.DateTimeField(auto_now_add=True)
+    numero_pedido = models.CharField(max_length=20, unique=True)
+    # Estado
+    estado = models.CharField(
+        max_length=20,
+        choices=EstadoPedido.choices,
+        default=EstadoPedido.PENDIENTE
+    )
+    # Datos de entrega
+    direccion_entrega = models.TextField()
+    comuna = models.CharField(max_length=100)
+    ciudad = models.CharField(max_length=100)
+    region = models.CharField(max_length=100)
+    codigo_postal = models.CharField(max_length=10, null=True, blank=True)
+    # Contacto
+    telefono_contacto = models.CharField(max_length=15)
+    email_contacto = models.EmailField()
+    # Montos
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    costo_envio = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Notas
+    notas_cliente = models.TextField(null=True, blank=True)
+    notas_internas = models.TextField(null=True, blank=True)
+    # Fechas
+    fecha_estimada_entrega = models.DateField(null=True, blank=True)
+    fecha_entrega_real = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'pedidos'
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return f"Pedido {self.numero_pedido}"
+
+    def save(self, *args, **kwargs):
+        if not self.numero_pedido:
+            # Generar número de pedido único
+            fecha = datetime.datetime.now().strftime('%Y%m%d')
+            ultimo = Pedido.objects.filter(numero_pedido__startswith=f'PED-{fecha}').count()
+            self.numero_pedido = f'PED-{fecha}-{ultimo + 1:04d}'
+        super().save(*args, **kwargs)
+
+class DetallePedido(BaseModel):
+    detalle_pedido_id = models.AutoField(primary_key=True)
+    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='detalles')
+    producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True)
+    nombre_producto = models.CharField(max_length=200)  # Por si se borra el producto
+    cantidad = models.PositiveIntegerField()
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    class Meta:
+        db_table = 'detalles_pedido'
+
+    def __str__(self):
+        return f"{self.cantidad}x {self.nombre_producto}"
+
+    def save(self, *args, **kwargs):
+        self.subtotal = self.cantidad * self.precio_unitario
+        super().save(*args, **kwargs)
+
+class SeguimientoDespacho(BaseModel):
+    seguimiento_id = models.AutoField(primary_key=True)
+    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='seguimientos')
+    estado = models.CharField(max_length=20, choices=EstadoPedido.choices)
+    descripcion = models.TextField()
+    ubicacion = models.CharField(max_length=200, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'seguimiento_despacho'
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return f"Seguimiento {self.pedido.numero_pedido} - {self.estado}"
+    
+class TamanoPredefinido(BaseModel):
+    """Tamaños preestablecidos para productos personalizables"""
+    tamano_id = models.AutoField(primary_key=True)
+    nombre_tamano = models.CharField(max_length=100)  # ej: "A4", "Póster 50x70"
+    ancho_cm = models.PositiveIntegerField()
+    alto_cm = models.PositiveIntegerField()
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='tamanos_predefinidos')
+    es_predeterminado = models.BooleanField(default=False)
+    orden = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        db_table = 'tamanos_predefinidos'
