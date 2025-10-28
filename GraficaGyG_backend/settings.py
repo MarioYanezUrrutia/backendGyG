@@ -23,11 +23,7 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 
 # Permitimos el acceso desde la URL de ngrok Y desde nuestro entorno de desarrollo local.
-ALLOWED_HOSTS = [
-    'ee22bfff0652.ngrok-free.app',  # Para los webhooks de WhatsApp
-    'localhost',                   # Para acceder al admin desde tu navegador
-    '127.0.0.1',                   # Alias de localhost, es bueno tenerlo también
-]
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',') if os.environ.get('ALLOWED_HOSTS') else []
 
 CORS_ALLOWED_ORIGINS = [
     "https://gygimpresores.netlify.app",
