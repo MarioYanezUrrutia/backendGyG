@@ -19,7 +19,7 @@ router.register(r'carritos', CarritoViewSet)
 router.register(r'itemscarrito', ItemCarritoViewSet)
 
 urlpatterns = [
-    path("".format(), include(router.urls)),
+    path('', include(router.urls)),
     path('categorias-con-productos/', obtener_categorias_con_productos, name='categorias-con-productos'),
     path('subcategoria/<int:subcategoria_id>/productos/', obtener_productos_por_subcategoria, name='productos-por-subcategoria'),
     path('user-profile/', user_profile, name='user-profile'),

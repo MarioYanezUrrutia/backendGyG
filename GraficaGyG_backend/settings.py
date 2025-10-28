@@ -143,9 +143,6 @@ else:
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
 # Configuración adicional para desarrollo
 # ALLOWED_HOSTS = ['*']
 
@@ -170,11 +167,14 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',  # Por defecto permite todo
+        'rest_framework.permissions.AllowAny',
     ],
-    'DEFAULT_PAGINATION_CLASS': None,  # ✅ DESACTIVA PAGINACIÓN
-    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    # 'PAGE_SIZE': 50,
+    'DEFAULT_PAGINATION_CLASS': None,
+    
+    # ✅ AGREGA ESTAS LÍNEAS PARA DEVOLVER JSON:
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
 }
 
 # ==================== CONFIGURACIÓN JWT ====================
