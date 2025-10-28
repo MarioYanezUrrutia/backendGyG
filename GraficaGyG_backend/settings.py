@@ -29,6 +29,11 @@ ALLOWED_HOSTS = [
     '127.0.0.1',                   # Alias de localhost, es bueno tenerlo también
 ]
 
+CORS_ALLOWED_ORIGINS = [
+    "https://gygimpresores.netlify.app/",
+    "http://localhost:5173"
+]
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
