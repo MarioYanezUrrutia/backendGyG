@@ -1,23 +1,27 @@
 # core/views.py
 from django.http import JsonResponse
+from django.db import transaction
 from django.core.serializers.json import DjangoJSONEncoder
 from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt 
 from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
 from django.views import View
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from rest_framework import viewsets, status
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 import logging
 from .models import (
-    Categoria, Subcategoria, Producto, Carrusel, Cliente, 
-    Pedido, DetallePedido, PreguntaFrecuente, Carrito, ItemCarrito, ImagenProducto
+    Categoria, Subcategoria, Producto, Carrusel, Terminacion, Acabado, TiempoProduccion,
+    Pedido, DetallePedido, PreguntaFrecuente, Carrito, ItemCarrito, ImagenProducto, Cliente
 )
 from .serializers import(
-    CategoriaSerializer, SubcategoriaSerializer, ProductoSerializer, CarruselSerializer, 
+    CategoriaSerializer, SubcategoriaSerializer, ProductoSerializer, CarruselSerializer, ProductoDetailSerializer,
     ClienteSerializer, PedidoSerializer, DetallePedidoSerializer, PreguntaFrecuenteSerializer, 
-    CarritoSerializer, ItemCarritoSerializer
+    CarritoSerializer, ItemCarritoSerializer, ProductoCreateUpdateSerializer, ProductoListSerializer,
+    TerminacionSerializer, AcabadoSerializer, TiempoProduccionSerializer, CalcularPrecioPersonalizadoSerializer
 ) 
 
 logger = logging.getLogger(__name__)
@@ -107,6 +111,80 @@ def obtener_categorias_con_productos(request):
         logger.error(f"Error en obtener_categorias_con_productos: {str(e)}", exc_info=True)
         return JsonResponse({'error': 'Internal server error', 'details': str(e)}, status=500)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def crear_orden(request):
+    try:
+        with transaction.atomic():
+            # Crear la orden
+            orden = Orden.objects.create(
+                user=request.user,
+                total=request.data.get('total'),
+                estado='PENDIENTE'
+            )
+            
+            # Crear detalles de productos estándar
+            for item in request.data.get('productos_estandar', []):
+                DetalleOrden.objects.create(
+                    orden=orden,
+                    producto_id=item['producto_id'],
+                    cantidad=item['cantidad'],
+                    precio_unitario=item['precio_unitario']
+                )
+            
+            # Vincular despachos personalizados
+            for despacho_data in request.data.get('despachos', []):
+                DespachoOrden.objects.create(
+                    orden=orden,
+                    despacho_id=despacho_data['id_despacho'],
+                    cantidad=despacho_data['cantidad'],
+                    precio_total=despacho_data['precio_total']
+                )
+            
+            return Response({
+                'success': True,
+                'orden_id': orden.id,
+                'mensaje': 'Orden creada exitosamente'
+            })
+            
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    print("Entrando a UserProfile")
+    try:
+        # Intenta obtener el perfil del usuario
+        user_profile = request.user.userprofile
+        persona = user_profile.persona
+        print("Persona: ", persona)
+        print("UserProfile: ", user_profile)
+        
+        return Response({
+            'primer_nombre': persona.primer_nombre,
+            'apellido_paterno': persona.apellido_paterno,
+            'email': request.user.email,
+            'username': request.user.username
+        })
+    except AttributeError:
+        # Si no existe userprofile
+        return Response({
+            'primer_nombre': request.user.first_name,
+            'apellido_paterno': request.user.last_name,
+            'email': request.user.email,
+            'username': request.user.username
+        })
+    except Exception as e:
+        print(f"Error en user_profile: {str(e)}")  # Para debug
+        return Response({
+            'error': str(e)
+        }, status=400)
+    
 @csrf_exempt
 def obtener_productos_por_subcategoria(request, subcategoria_id):
     try:
@@ -197,8 +275,92 @@ class SubcategoriaViewSet(viewsets.ModelViewSet):
     serializer_class = SubcategoriaSerializer
 
 class ProductoViewSet(viewsets.ModelViewSet):
-    queryset = Producto.objects.all()
-    serializer_class = ProductoSerializer
+    queryset = Producto.objects.filter(activo=True)
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ProductoDetailSerializer
+        elif self.action in ['create', 'update', 'partial_update']:
+            return ProductoCreateUpdateSerializer
+        elif self.action == 'calcular_precio':
+            return CalcularPrecioPersonalizadoSerializer
+        return ProductoListSerializer
+    
+    @action(detail=True, methods=['post'], url_path='calcular-precio', permission_classes=[AllowAny])
+    def calcular_precio(self, request, pk=None):
+        """
+        Calcula el precio dinámico del producto según personalización.
+        
+        POST /api/productos/{id}/calcular-precio/
+        
+        Body esperado:
+        {
+            "ancho_cm": 100,
+            "alto_cm": 150,
+            "terminacion_id": 1,
+            "tiempo_produccion_id": 2,
+            "cantidad": 5,
+            "acabado_ids": [1, 2]  // opcional
+        }
+        
+        Response:
+        {
+            "error": false,
+            "precio_unitario": 75000,
+            "precio_total": 375000,
+            "cantidad": 5,
+            "ancho_cm": 100,
+            "alto_cm": 150,
+            "terminacion": {...},
+            "tiempo_produccion": {...},
+            "acabados": [],
+            "desglose": {...}
+        }
+        """
+        producto = self.get_object()
+        
+        # Validar que el producto tenga opciones de personalización
+        if not producto.tiene_personalizaciones():
+            return Response(
+                {
+                    'error': True,
+                    'mensaje': 'Este producto no tiene opciones de personalización'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Serializar y validar datos de entrada
+        serializer = CalcularPrecioPersonalizadoSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(
+                {
+                    'error': True,
+                    'mensajes_validacion': serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Obtener datos validados
+        datos = serializer.validated_data
+        
+        # Calcular precio usando el método del modelo
+        resultado = producto.calcular_precio_personalizado(
+            ancho_cm=datos['ancho_cm'],
+            alto_cm=datos['alto_cm'],
+            terminacion_id=datos['terminacion_id'],
+            tiempo_produccion_id=datos['tiempo_produccion_id'],
+            cantidad=datos['cantidad'],
+            acabado_ids=datos.get('acabado_ids', [])
+        )
+        
+        if resultado.get('error'):
+            return Response(
+                resultado,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        return Response(resultado, status=status.HTTP_200_OK)
 
 class CarruselViewSet(viewsets.ModelViewSet):
     queryset = Carrusel.objects.all()
@@ -267,4 +429,20 @@ class ItemCarritoViewSet(viewsets.ModelViewSet):
     queryset = ItemCarrito.objects.all()
     serializer_class = ItemCarritoSerializer
 
+class TerminacionViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet para Terminaciones (Materiales) - Público"""
+    queryset = Terminacion.objects.all()
+    serializer_class = TerminacionSerializer
+    permission_classes = [AllowAny] 
 
+class AcabadoViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet para Acabados - Público"""
+    queryset = Acabado.objects.all()
+    serializer_class = AcabadoSerializer
+    permission_classes = [AllowAny]
+
+class TiempoProduccionViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet para Tiempos de Producción - Público"""
+    queryset = TiempoProduccion.objects.all()
+    serializer_class = TiempoProduccionSerializer
+    permission_classes = [AllowAny]
