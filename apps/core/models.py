@@ -617,8 +617,8 @@ class Producto(BaseModel):
     ubicacion_bodega = models.CharField(max_length=100, null=True, blank=True)
     
     # Ventas al por mayor
-    unidad_por_mayor = models.IntegerField(default=0, help_text="Cantidad mínima para precio por mayor")
-    precio_por_mayor = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    unidad_por_mayor = models.IntegerField(default=0, null=True, blank=True, help_text="Cantidad mínima para precio por mayor")
+    precio_por_mayor = models.DecimalField(max_digits=10, decimal_places=2, default=0, null=True, blank=True)
     
     # Peso y dimensiones (para envíos)
     peso_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
@@ -627,8 +627,8 @@ class Producto(BaseModel):
     alto_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     
     # Metadata
-    vistas = models.PositiveIntegerField(default=0)
-    ventas_totales = models.PositiveIntegerField(default=0)
+    vistas = models.PositiveIntegerField(default=0, null=True, blank=True, )
+    ventas_totales = models.PositiveIntegerField(default=0, null=True, blank=True, )
     
     class Meta:
         db_table = 'productos'
