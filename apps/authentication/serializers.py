@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from apps.core.models import UserProfile, Persona, UserRol, Rol
+from apps.core.models import Cliente
 from django.db import transaction
 import secrets
 
@@ -16,9 +17,9 @@ class RegistroSerializer(serializers.Serializer):
     segundo_nombre = serializers.CharField(max_length=30, required=False, allow_blank=True)
     apellido_paterno = serializers.CharField(max_length=30)
     apellido_materno = serializers.CharField(max_length=30, required=False, allow_blank=True)
-    documento_identidad = serializers.CharField(max_length=15)
-    dv = serializers.CharField(max_length=1)
-    telefono_persona = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    documento_identidad = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    dv = serializers.CharField(max_length=1, required=False, allow_blank=True)
+    telefono_persona = serializers.CharField(max_length=15)
     whatsapp_persona = serializers.CharField(max_length=15, required=False, allow_blank=True)
     fecha_nacimiento = serializers.DateField(required=False, allow_null=True)
     
@@ -52,7 +53,8 @@ class RegistroSerializer(serializers.Serializer):
             email=validated_data['email'],
             password=validated_data['password']
         )
-        user.is_active = False  # Desactivado hasta que valide el email
+        # user.is_active = False  # Desactivado hasta que valide el email
+        user.is_active = True #No es necesaria la validación por mail
         user.save()
         
         # Crear Persona
@@ -61,8 +63,8 @@ class RegistroSerializer(serializers.Serializer):
             segundo_nombre=validated_data.get('segundo_nombre', ''),
             apellido_paterno=validated_data['apellido_paterno'],
             apellido_materno=validated_data.get('apellido_materno', ''),
-            documento_identidad=validated_data['documento_identidad'],
-            dv=validated_data['dv'],
+            documento_identidad=validated_data.get('documento_identidad') or '',
+            dv=validated_data.get('dv') or '',
             mail=validated_data['email'],
             telefono_persona=validated_data.get('telefono_persona', ''),
             whatsapp_persona=validated_data.get('whatsapp_persona', ''),
@@ -85,8 +87,14 @@ class RegistroSerializer(serializers.Serializer):
             rol_cliente = Rol.objects.get(codigo_rol='CLIENTE')
             UserRol.objects.create(user_profile=user_profile, rol=rol_cliente)
         except Rol.DoesNotExist:
-            # Si no existe el rol CLIENTE, no asignamos nada
             pass
+        
+        # Crear registro en tabla Cliente
+        Cliente.objects.create(
+            user_profile=user_profile,
+            nombre_cliente=f"{validated_data['primer_nombre']} {validated_data['apellido_paterno']}",
+            telefono=validated_data.get('telefono_persona', '')
+        )
         
         return user_profile
 

@@ -1,9 +1,10 @@
 from rest_framework import serializers
 from .models import (
-    Categoria, Subcategoria, Producto, Carrusel, Cliente, Pedido, DetallePedido, 
+    Categoria, Subcategoria, Producto, Carrusel, Cliente, 
     PreguntaFrecuente, Carrito, ItemCarrito, ImagenProducto, Marca,
-    UnidadMedida, Proveedor, Terminacion, Acabado, TiempoProduccion, TamanoPredefinido
+    UnidadMedida, Proveedor, Terminacion, Acabado, TiempoProduccion
 )
+from apps.orders.models import Pedido, DetallePedido, TamanoPredefinido
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -222,16 +223,6 @@ class CarruselSerializer(serializers.ModelSerializer):
 class ClienteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cliente
-        fields = '__all__'
-
-class PedidoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Pedido
-        fields = '__all__'
-
-class DetallePedidoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DetallePedido
         fields = '__all__'
 
 class PreguntaFrecuenteSerializer(serializers.ModelSerializer):

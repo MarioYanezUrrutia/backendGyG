@@ -10,7 +10,7 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # Validación de email
-    path('validar-email/', views.validar_email, name='validar_email'),
+    # path('validar-email/', views.validar_email, name='validar_email'),
     
     # Información del usuario
     path('perfil/', views.perfil_actual, name='perfil_actual'),

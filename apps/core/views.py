@@ -13,13 +13,14 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 import logging
+from apps.orders.models import Pedido, DetallePedido, SeguimientoDespacho
 from .models import (
     Categoria, Subcategoria, Producto, Carrusel, Terminacion, Acabado, TiempoProduccion,
-    Pedido, DetallePedido, PreguntaFrecuente, Carrito, ItemCarrito, ImagenProducto, Cliente
+    PreguntaFrecuente, Carrito, ItemCarrito, ImagenProducto, Cliente
 )
 from .serializers import(
-    CategoriaSerializer, SubcategoriaSerializer, ProductoSerializer, CarruselSerializer, ProductoDetailSerializer,
-    ClienteSerializer, PedidoSerializer, DetallePedidoSerializer, PreguntaFrecuenteSerializer, 
+    CategoriaSerializer, SubcategoriaSerializer, CarruselSerializer, ProductoDetailSerializer,
+    ClienteSerializer, PreguntaFrecuenteSerializer, 
     CarritoSerializer, ItemCarritoSerializer, ProductoCreateUpdateSerializer, ProductoListSerializer,
     TerminacionSerializer, AcabadoSerializer, TiempoProduccionSerializer, CalcularPrecioPersonalizadoSerializer
 ) 
@@ -117,7 +118,7 @@ def crear_orden(request):
     try:
         with transaction.atomic():
             # Crear la orden
-            orden = Orden.objects.create(
+            orden = Pedido.objects.create(
                 user=request.user,
                 total=request.data.get('total'),
                 estado='PENDIENTE'
@@ -125,7 +126,7 @@ def crear_orden(request):
             
             # Crear detalles de productos estándar
             for item in request.data.get('productos_estandar', []):
-                DetalleOrden.objects.create(
+                DetallePedido.objects.create(
                     orden=orden,
                     producto_id=item['producto_id'],
                     cantidad=item['cantidad'],
@@ -134,7 +135,7 @@ def crear_orden(request):
             
             # Vincular despachos personalizados
             for despacho_data in request.data.get('despachos', []):
-                DespachoOrden.objects.create(
+                SeguimientoDespacho.objects.create(
                     orden=orden,
                     despacho_id=despacho_data['id_despacho'],
                     cantidad=despacho_data['cantidad'],
@@ -369,21 +370,6 @@ class CarruselViewSet(viewsets.ModelViewSet):
 class ClienteViewSet(viewsets.ModelViewSet):
     queryset = Cliente.objects.all()
     serializer_class = ClienteSerializer
-
-class PedidoViewSet(viewsets.ModelViewSet):
-    queryset = Pedido.objects.all()
-    serializer_class = PedidoSerializer
-
-    @action(detail=True, methods=["get"])
-    def seguimiento(self, request, pk=None):
-        pedido = self.get_object()
-        # Aquí se podría implementar una lógica más compleja de seguimiento
-        # Por ahora, solo devolvemos el estado del pedido
-        return Response({"estado": pedido.estado})
-
-class DetallePedidoViewSet(viewsets.ModelViewSet):
-    queryset = DetallePedido.objects.all()
-    serializer_class = DetallePedidoSerializer
 
 class PreguntaFrecuenteViewSet(viewsets.ModelViewSet):
     queryset = PreguntaFrecuente.objects.all()

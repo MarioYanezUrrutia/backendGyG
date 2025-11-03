@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-import datetime
 from django.urls import reverse
 from PIL import Image
 import os
@@ -108,8 +107,8 @@ class Persona(BaseModel):
     segundo_nombre = models.CharField(max_length=30, blank=True, null=True)
     apellido_paterno = models.CharField(max_length=30)
     apellido_materno = models.CharField(max_length=30, blank=True, null=True)
-    documento_identidad = models.CharField(max_length=15, unique=True)
-    dv = models.CharField(max_length=1, verbose_name="Dígito Verificador")
+    documento_identidad = models.CharField(max_length=15, unique=True, blank=True, null=True)
+    dv = models.CharField(max_length=1, blank=True, null=True, verbose_name="Dígito Verificador")
     mail = models.EmailField(unique=True)
     cod_tel_pais = models.CharField(max_length=5, blank=True, null=True)
     cod_telefono = models.CharField(max_length=5, blank=True, null=True)
@@ -618,7 +617,7 @@ class Producto(BaseModel):
     
     # Ventas al por mayor
     unidad_por_mayor = models.IntegerField(default=0, null=True, blank=True, help_text="Cantidad mínima para precio por mayor")
-    precio_por_mayor = models.DecimalField(max_digits=10, decimal_places=2, default=0, null=True, blank=True)
+    precio_por_mayor = models.BigIntegerField(default=0, null=True, blank=True)
     
     # Peso y dimensiones (para envíos)
     peso_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
@@ -780,18 +779,22 @@ class Producto(BaseModel):
             
             # FÓRMULA: (ancho × alto × precio_material × precio_tiempo) / 10000
             # donde precio_material es por 100cm (no por m²)
-            precio_unitario = (ancho_cm * alto_cm * terminacion.precio * tiempo.precio) // 10000
+            # precio_unitario = (ancho_cm * alto_cm * terminacion.precio * tiempo.precio) // 10000
             
-            # Si el resultado es 0 (porque es muy pequeño), al menos cobrar 1000 (ajustable)
-            if precio_unitario < 1000:
-                precio_unitario = 1000
+            # # Si el resultado es 0 (porque es muy pequeño), al menos cobrar 1000 (ajustable)
+            # if precio_unitario < 1000:
+            #     precio_unitario = 1000
             
-            # Precio total por cantidad
-            precio_total = precio_unitario * cantidad
+            # # Precio total por cantidad
+            # precio_total = precio_unitario * cantidad
             
-            # Validar acabados si se proporcionan
-            costo_acabados = 0
+            # # Validar acabados si se proporcionan
+            # costo_acabados = 0
+            # acabados_info = []
+            # Calcular costo de acabados (multiplicador acumulado)
+            costo_acabados = 1  # Factor neutro si no hay acabados
             acabados_info = []
+
             if acabado_ids:
                 acabados_disponibles = self.producto_acabados.filter(
                     acabado_id__in=acabado_ids,
@@ -805,13 +808,20 @@ class Producto(BaseModel):
                     }
                 
                 for pa in acabados_disponibles:
-                    # Los acabados NO afectan el precio según los requerimientos
-                    # pero se almacenan como información
+                    # Multiplicar el costo adicional del acabado
+                    costo_acabados *= pa.acabado.costo_adicional
                     acabados_info.append({
                         'acabado_id': pa.acabado.acabado_id,
                         'nombre_acabado': pa.acabado.nombre_acabado,
                         'costo_adicional': pa.acabado.costo_adicional
                     })
+            
+            # FÓRMULA CORRECTA: ((alto × ancho × acabado × terminacion) / 10000) + tiempo_produccion
+            precio_base = int((ancho_cm * alto_cm * costo_acabados * terminacion.precio) / 10000)
+            precio_unitario = precio_base + tiempo.precio
+            
+            # Precio total por cantidad
+            precio_total = precio_unitario * cantidad
             
             return {
                 'error': False,
@@ -833,8 +843,15 @@ class Producto(BaseModel):
                 },
                 'acabados': acabados_info,
                 'desglose': {
-                    'base_calculo': f'({ancho_cm} × {alto_cm} × {terminacion.precio} × {tiempo.precio}) / 10000 = {precio_unitario}',
-                    'total': f'{precio_unitario} × {cantidad} = {precio_total}'
+                    'base_calculo': f'(({ancho_cm} × {alto_cm} × {costo_acabados} × {terminacion.precio}) / 10000) + {tiempo.precio} = {precio_unitario}',
+                    'total': f'{precio_unitario} × {cantidad} = {precio_total}',
+                    'componentes': {
+                        'area_cm2': ancho_cm * alto_cm,
+                        'multiplicador_acabados': costo_acabados,
+                        'precio_terminacion': terminacion.precio,
+                        'precio_base': precio_base,
+                        'costo_tiempo': tiempo.precio
+                    }
                 }
             }
         
@@ -852,7 +869,6 @@ class Producto(BaseModel):
             self.acabados.filter(activo=True).exists()
         )
     
-
 def producto_imagen_path(instance, filename):
     """
     Genera la ruta: productos/{producto_id}/{imagen_id}.png
@@ -932,106 +948,3 @@ class ImagenProducto(BaseModel):
                     
             except Exception as e:
                 print(f"Error procesando imagen {self.pk}: {e}")
-
-# ============= MODELOS DE PEDIDOS Y DESPACHO =============
-class EstadoPedido(models.TextChoices):
-    PENDIENTE = 'PENDIENTE', 'Pendiente'
-    CONFIRMADO = 'CONFIRMADO', 'Confirmado'
-    PREPARANDO = 'PREPARANDO', 'Preparando'
-    EN_CAMINO = 'EN_CAMINO', 'En Camino'
-    ENTREGADO = 'ENTREGADO', 'Entregado'
-    CANCELADO = 'CANCELADO', 'Cancelado'
-
-class Pedido(BaseModel):
-    pedido_id = models.AutoField(primary_key=True)
-    cliente = models.ForeignKey('Cliente', on_delete=models.SET_NULL, null=True, blank=True)
-    user_profile = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
-    fecha_pedido = models.DateTimeField(auto_now_add=True)
-    numero_pedido = models.CharField(max_length=20, unique=True)
-    # Estado
-    estado = models.CharField(
-        max_length=20,
-        choices=EstadoPedido.choices,
-        default=EstadoPedido.PENDIENTE
-    )
-    # Datos de entrega
-    direccion_entrega = models.TextField()
-    comuna = models.CharField(max_length=100)
-    ciudad = models.CharField(max_length=100)
-    region = models.CharField(max_length=100)
-    codigo_postal = models.CharField(max_length=10, null=True, blank=True)
-    # Contacto
-    telefono_contacto = models.CharField(max_length=15)
-    email_contacto = models.EmailField()
-    # Montos
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    costo_envio = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    # Notas
-    notas_cliente = models.TextField(null=True, blank=True)
-    notas_internas = models.TextField(null=True, blank=True)
-    # Fechas
-    fecha_estimada_entrega = models.DateField(null=True, blank=True)
-    fecha_entrega_real = models.DateTimeField(null=True, blank=True)
-    
-    class Meta:
-        db_table = 'pedidos'
-        ordering = ['-fecha_creacion']
-
-    def __str__(self):
-        return f"Pedido {self.numero_pedido}"
-
-    def save(self, *args, **kwargs):
-        if not self.numero_pedido:
-            # Generar número de pedido único
-            fecha = datetime.datetime.now().strftime('%Y%m%d')
-            ultimo = Pedido.objects.filter(numero_pedido__startswith=f'PED-{fecha}').count()
-            self.numero_pedido = f'PED-{fecha}-{ultimo + 1:04d}'
-        super().save(*args, **kwargs)
-
-class DetallePedido(BaseModel):
-    detalle_pedido_id = models.AutoField(primary_key=True)
-    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='detalles')
-    producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True)
-    nombre_producto = models.CharField(max_length=200)  # Por si se borra el producto
-    cantidad = models.PositiveIntegerField()
-    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
-    
-    class Meta:
-        db_table = 'detalles_pedido'
-
-    def __str__(self):
-        return f"{self.cantidad}x {self.nombre_producto}"
-
-    def save(self, *args, **kwargs):
-        self.subtotal = self.cantidad * self.precio_unitario
-        super().save(*args, **kwargs)
-
-class SeguimientoDespacho(BaseModel):
-    seguimiento_id = models.AutoField(primary_key=True)
-    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='seguimientos')
-    estado = models.CharField(max_length=20, choices=EstadoPedido.choices)
-    descripcion = models.TextField()
-    ubicacion = models.CharField(max_length=200, null=True, blank=True)
-    
-    class Meta:
-        db_table = 'seguimiento_despacho'
-        ordering = ['-fecha_creacion']
-
-    def __str__(self):
-        return f"Seguimiento {self.pedido.numero_pedido} - {self.estado}"
-    
-class TamanoPredefinido(BaseModel):
-    """Tamaños preestablecidos para productos personalizables"""
-    tamano_id = models.AutoField(primary_key=True)
-    nombre_tamano = models.CharField(max_length=100)  # ej: "A4", "Póster 50x70"
-    ancho_cm = models.PositiveIntegerField()
-    alto_cm = models.PositiveIntegerField()
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='tamanos_predefinidos')
-    es_predeterminado = models.BooleanField(default=False)
-    orden = models.PositiveIntegerField(default=0)
-    
-    class Meta:
-        db_table = 'tamanos_predefinidos'

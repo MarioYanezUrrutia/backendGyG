@@ -17,16 +17,17 @@ def registro(request):
     """
     Registra un nuevo usuario y envía email de validación
     """
+    
     serializer = RegistroSerializer(data=request.data)
     
     if serializer.is_valid():
         user_profile = serializer.save()
-        
-        # Enviar email de validación
-        enviar_email_validacion(user_profile)
+    
+        # Email de validación deshabilitado - Usuario activo automáticamente
+        # enviar_email_validacion(user_profile)
         
         return Response({
-            'message': 'Usuario registrado exitosamente. Por favor, revisa tu email para validar tu cuenta.',
+            'message': 'Usuario registrado exitosamente. Ya puedes iniciar sesión.',
             'email': user_profile.user.email
         }, status=status.HTTP_201_CREATED)
     
@@ -38,8 +39,19 @@ def login(request):
     """
     Autentica un usuario y retorna tokens JWT
     """
+    print("=" * 50)
+    print("INTENTO DE LOGIN:")
+    print(f"Datos recibidos: {request.data}")
+    
     username = request.data.get('username')
     password = request.data.get('password')
+    
+    print(f"Username: {username}")
+    print(f"Password: {'*' * len(password) if password else 'None'}")
+
+
+
+
     
     if not username or not password:
         return Response({
@@ -49,6 +61,27 @@ def login(request):
     # Autenticar usuario
     user = authenticate(username=username, password=password)
     
+    print(f"Usuario autenticado: {user}")
+    print(f"Usuario es None: {user is None}")
+
+    if user:
+        print(f"Usuario encontrado: {user.username}")
+        print(f"Usuario activo: {user.is_active}")
+    else:
+        print("❌ Usuario NO encontrado - Credenciales inválidas")
+        
+        # Verificar si el usuario existe
+        from django.contrib.auth.models import User
+        try:
+            existing_user = User.objects.get(username=username)
+            print(f"⚠️ El usuario '{username}' SÍ existe en la BD")
+            print(f"is_active: {existing_user.is_active}")
+            print(f"has_usable_password: {existing_user.has_usable_password()}")
+        except User.DoesNotExist:
+            print(f"⚠️ El usuario '{username}' NO existe en la BD")
+
+    print("=" * 50)
+
     if user is None:
         return Response({
             'error': 'Credenciales inválidas'
