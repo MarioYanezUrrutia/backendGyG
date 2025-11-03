@@ -98,6 +98,7 @@ class ProductoAdminSerializer(serializers.ModelSerializer):
     )
     
     # Campos de solo lectura para mostrar información relacionada
+    categoria_id = serializers.SerializerMethodField()  
     categoria_nombre = serializers.CharField(source='subcategoria.categoria.nombre_categoria', read_only=True)
     subcategoria_nombre = serializers.CharField(source='subcategoria.nombre_subcategoria', read_only=True)
     marca_nombre = serializers.CharField(source='marca.nombre_marca', read_only=True)
@@ -131,7 +132,7 @@ class ProductoAdminSerializer(serializers.ModelSerializer):
         
         # Crear producto
         producto = Producto.objects.create(**validated_data)
-        
+            
         # Crear imágenes
         for i, imagen in enumerate(imagenes_data):
             ImagenProducto.objects.create(
@@ -142,6 +143,16 @@ class ProductoAdminSerializer(serializers.ModelSerializer):
             )
         
         return producto
+    
+    class Meta:
+        model = Producto
+        fields = '__all__'  # o tu lista de campos
+    
+    def get_categoria_id(self, obj):  # ✅ AGREGAR
+        """Obtener el ID de la categoría desde la subcategoría"""
+        if obj.subcategoria:
+            return obj.subcategoria.categoria_id
+        return None
     
     def update(self, instance, validated_data):
         imagenes_data = validated_data.pop('imagenes_upload', [])
@@ -212,3 +223,69 @@ class CarruselAdminSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.imagen.url)
             return obj.imagen.url
         return None
+    
+def get_imagen_url(self, obj):
+        if obj.imagen:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.imagen.url)
+            return obj.imagen.url
+        return None
+
+# ==================== TERMINACIONES ====================
+class TerminacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = None  # Se importará dinámicamente
+        fields = ['terminacion_id', 'nombre_terminacion', 'descripcion', 'precio', 
+                  'es_predeterminado', 'orden', 'producto']
+        extra_kwargs = {
+            'producto': {'required': True}
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.core.models import Terminacion
+        self.Meta.model = Terminacion
+
+# ==================== TIEMPOS DE PRODUCCIÓN ====================
+class TiempoProduccionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = None
+        fields = ['tiempo_produccion_id', 'nombre_tiempo', 'descripcion', 
+                  'dias_estimados', 'precio', 'es_predeterminado', 'orden', 'producto']
+        extra_kwargs = {
+            'producto': {'required': True}
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.core.models import TiempoProduccion
+        self.Meta.model = TiempoProduccion
+
+# ==================== ACABADOS ====================
+class AcabadoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = None
+        fields = ['acabado_id', 'nombre_acabado', 'descripcion', 'costo_adicional']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.core.models import Acabado
+        self.Meta.model = Acabado
+
+class ProductoAcabadoSerializer(serializers.ModelSerializer):
+    acabado_nombre = serializers.CharField(source='acabado.nombre_acabado', read_only=True)
+    acabado_descripcion = serializers.CharField(source='acabado.descripcion', read_only=True)
+    acabado_costo = serializers.IntegerField(source='acabado.costo_adicional', read_only=True)
+    acabado_id = serializers.IntegerField(source='acabado.acabado_id', read_only=True)
+    
+    class Meta:
+        model = None
+        fields = ['producto', 'acabado', 'acabado_id', 'acabado_nombre', 
+                  'acabado_descripcion', 'acabado_costo', 'es_predeterminado', 'orden']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.core.models import ProductoAcabado
+        self.Meta.model = ProductoAcabado
+

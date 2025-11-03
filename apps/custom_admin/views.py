@@ -5,12 +5,12 @@ from .models import ProductFile
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Q, Count
 from apps.core.models import (
-    Producto, ImagenProducto, Categoria, Subcategoria, 
+    Producto, ImagenProducto, Categoria, Subcategoria, Terminacion, TiempoProduccion,
     Carrusel, Marca, UnidadMedida, Proveedor
 )
 from .serializers import (
-    ProductoAdminSerializer, ProductoListAdminSerializer,
-    ImagenProductoAdminSerializer, CategoriaAdminSerializer,
+    ProductoAdminSerializer, ProductoListAdminSerializer, TerminacionSerializer,
+    ImagenProductoAdminSerializer, CategoriaAdminSerializer, TiempoProduccionSerializer,
     SubcategoriaAdminSerializer, CarruselAdminSerializer,
     MarcaSerializer, UnidadMedidaSerializer, ProveedorSerializer
 )
@@ -60,7 +60,7 @@ class ProductoAdminViewSet(viewsets.ModelViewSet):
         if marca_id:
             queryset = queryset.filter(marca_id=marca_id)
         
-        if activo is not None:
+        if activo is not None and activo != '':  # ✅ Agregado: and activo != ''
             queryset = queryset.filter(activo=activo.lower() == 'true')
         
         return queryset.order_by('-fecha_creacion')
@@ -163,6 +163,233 @@ class ProductoAdminViewSet(viewsets.ModelViewSet):
         }
         return Response(stats)
 
+    # ==================== TERMINACIONES ====================
+    @action(detail=True, methods=['get', 'post'])
+    def terminaciones(self, request, pk=None):
+        """Obtener terminaciones de un producto"""
+        producto = self.get_object()
+        if request.method == 'GET':
+            terminaciones = producto.terminaciones.all().order_by('orden', 'nombre_terminacion')
+            serializer = TerminacionSerializer(terminaciones, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            data = request.data.copy()
+            data['producto'] = producto.producto_id
+            
+            serializer = TerminacionSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # @action(detail=True, methods=['post'], url_path='terminaciones/agregar')
+    # def agregar_terminacion(self, request, pk=None):
+    #     """Agregar una terminación a un producto"""
+    #     producto = self.get_object()
+        
+    #     data = request.data.copy()
+    #     data['producto'] = producto.producto_id
+        
+    #     serializer = TerminacionSerializer(data=data)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['put', 'patch'], url_path='terminaciones/(?P<terminacion_id>[^/.]+)')
+    def actualizar_terminacion(self, request, pk=None, terminacion_id=None):
+        """Actualizar una terminación"""
+        producto = self.get_object()
+        from apps.core.models import Terminacion
+        from .serializers import TerminacionSerializer
+        
+        try:
+            terminacion = producto.terminaciones.get(terminacion_id=terminacion_id)
+        except Terminacion.DoesNotExist:
+            return Response(
+                {'error': 'Terminación no encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = TerminacionSerializer(terminacion, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['delete'], url_path='terminaciones/(?P<terminacion_id>[^/.]+)/eliminar')
+    def eliminar_terminacion(self, request, pk=None, terminacion_id=None):
+        """Eliminar una terminación"""
+        producto = self.get_object()
+        from apps.core.models import Terminacion
+        
+        try:
+            terminacion = producto.terminaciones.get(terminacion_id=terminacion_id)
+            terminacion.delete()
+            return Response({'message': 'Terminación eliminada'}, status=status.HTTP_200_OK)
+        except Terminacion.DoesNotExist:
+            return Response(
+                {'error': 'Terminación no encontrada'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    # ==================== TIEMPOS DE PRODUCCIÓN ====================
+    @action(detail=True, methods=['get', 'post'], url_path='tiempos-produccion')
+    def tiempos_produccion(self, request, pk=None):
+        """Obtener o agregar tiempos de producción de un producto"""
+        producto = self.get_object()
+                
+        if request.method == 'GET':
+            tiempos = producto.tiempos_produccion.all().order_by('orden', 'dias_estimados')
+            serializer = TiempoProduccionSerializer(tiempos, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            data = request.data.copy()
+            data['producto'] = producto.producto_id
+            
+            serializer = TiempoProduccionSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # @action(detail=True, methods=['post'], url_path='tiempos-produccion/agregar')
+    # def agregar_tiempo_produccion(self, request, pk=None):
+    #     """Agregar un tiempo de producción a un producto"""
+    #     producto = self.get_object()
+    #     from apps.core.models import TiempoProduccion
+    #     from .serializers import TiempoProduccionSerializer
+        
+    #     data = request.data.copy()
+    #     data['producto'] = producto.producto_id
+        
+    #     serializer = TiempoProduccionSerializer(data=data)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['put', 'patch'], url_path='tiempos-produccion/(?P<tiempo_id>[^/.]+)')
+    def actualizar_tiempo_produccion(self, request, pk=None, tiempo_id=None):
+        """Actualizar un tiempo de producción"""
+        producto = self.get_object()
+        from apps.core.models import TiempoProduccion
+        from .serializers import TiempoProduccionSerializer
+        
+        try:
+            tiempo = producto.tiempos_produccion.get(tiempo_produccion_id=tiempo_id)
+        except TiempoProduccion.DoesNotExist:
+            return Response(
+                {'error': 'Tiempo de producción no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = TiempoProduccionSerializer(tiempo, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['delete'], url_path='tiempos-produccion/(?P<tiempo_id>[^/.]+)/eliminar')
+    def eliminar_tiempo_produccion(self, request, pk=None, tiempo_id=None):
+        """Eliminar un tiempo de producción"""
+        producto = self.get_object()
+        from apps.core.models import TiempoProduccion
+        
+        try:
+            tiempo = producto.tiempos_produccion.get(tiempo_produccion_id=tiempo_id)
+            tiempo.delete()
+            return Response({'message': 'Tiempo de producción eliminado'}, status=status.HTTP_200_OK)
+        except TiempoProduccion.DoesNotExist:
+            return Response(
+                {'error': 'Tiempo de producción no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    # ==================== ACABADOS ====================
+    @action(detail=True, methods=['get'])
+    def acabados(self, request, pk=None):
+        """Obtener acabados de un producto"""
+        producto = self.get_object()
+        from apps.core.models import ProductoAcabado
+        from .serializers import ProductoAcabadoSerializer
+        
+        producto_acabados = producto.producto_acabados.all().select_related('acabado').order_by('orden')
+        serializer = ProductoAcabadoSerializer(producto_acabados, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'], url_path='acabados/agregar')
+    def agregar_acabado(self, request, pk=None):
+        """Agregar un acabado a un producto"""
+        producto = self.get_object()
+        from apps.core.models import ProductoAcabado, Acabado
+        from .serializers import ProductoAcabadoSerializer
+        
+        acabado_id = request.data.get('acabado_id')
+        es_predeterminado = request.data.get('es_predeterminado', False)
+        orden = request.data.get('orden', 0)
+        
+        if not acabado_id:
+            return Response(
+                {'error': 'Se requiere acabado_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            acabado = Acabado.objects.get(acabado_id=acabado_id)
+        except Acabado.DoesNotExist:
+            return Response(
+                {'error': 'Acabado no encontrado'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verificar si ya existe
+        if ProductoAcabado.objects.filter(producto=producto, acabado=acabado).exists():
+            return Response(
+                {'error': 'Este acabado ya está asignado al producto'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        producto_acabado = ProductoAcabado.objects.create(
+            producto=producto,
+            acabado=acabado,
+            es_predeterminado=es_predeterminado,
+            orden=orden
+        )
+        
+        serializer = ProductoAcabadoSerializer(producto_acabado)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['delete'], url_path='acabados/(?P<acabado_id>[^/.]+)/eliminar')
+    def eliminar_acabado(self, request, pk=None, acabado_id=None):
+        """Eliminar un acabado de un producto"""
+        producto = self.get_object()
+        from apps.core.models import ProductoAcabado
+        
+        try:
+            producto_acabado = ProductoAcabado.objects.get(
+                producto=producto,
+                acabado_id=acabado_id
+            )
+            producto_acabado.delete()
+            return Response({'message': 'Acabado eliminado del producto'}, status=status.HTTP_200_OK)
+        except ProductoAcabado.DoesNotExist:
+            return Response(
+                {'error': 'Acabado no encontrado en este producto'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['get'], url_path='acabados/disponibles')
+    def acabados_disponibles(self, request):
+        """Obtener lista de todos los acabados disponibles"""
+        from apps.core.models import Acabado
+        from .serializers import AcabadoSerializer
+        
+        acabados = Acabado.objects.filter(activo=True).order_by('nombre_acabado')
+        serializer = AcabadoSerializer(acabados, many=True)
+        return Response(serializer.data)
 # ==================== CATEGORÍAS ====================
 class CategoriaAdminViewSet(viewsets.ModelViewSet):
     """ViewSet para administración de categorías"""
