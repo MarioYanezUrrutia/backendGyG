@@ -4,7 +4,7 @@ from .views import (
     CategoriaViewSet, SubcategoriaViewSet, ProductoViewSet, CarruselViewSet, 
     ClienteViewSet, PreguntaFrecuenteViewSet, 
     CarritoViewSet, ItemCarritoViewSet, obtener_categorias_con_productos, obtener_productos_por_subcategoria, 
-    user_profile, crear_orden
+    user_profile, crear_orden, send_contact_email
 )
 router = DefaultRouter()
 router.register(r'categorias', CategoriaViewSet)
@@ -22,6 +22,7 @@ urlpatterns = [
     path('subcategoria/<int:subcategoria_id>/productos/', obtener_productos_por_subcategoria, name='productos-por-subcategoria'),
     path('user-profile/', user_profile, name='user-profile'),
     path('crear-orden/', crear_orden, name='crear-orden'),
+    path('contact/send/', send_contact_email, name='send_contact_email'),
 ]
 
 

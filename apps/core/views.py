@@ -6,6 +6,8 @@ from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt 
 from django.utils.decorators import method_decorator
 from django.contrib.auth.decorators import login_required
+from django.core.mail import send_mail
+from django.conf import settings
 from django.views import View
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
@@ -267,6 +269,95 @@ def obtener_productos_por_subcategoria(request, subcategoria_id):
         logger.error(f"Error en obtener_productos_por_subcategoria: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
         
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def send_contact_email(request):
+    """
+    Vista para enviar correo de contacto desde el formulario web
+    """
+    try:
+        # Obtener datos del formulario
+        nombre = request.data.get('nombre', '')
+        email = request.data.get('email', '')
+        telefono = request.data.get('telefono', '')
+        asunto = request.data.get('asunto', '')
+        mensaje = request.data.get('mensaje', '')
+
+        # Validar campos obligatorios
+        if not all([nombre, email, asunto, mensaje]):
+            return Response(
+                {'message': 'Por favor completa todos los campos obligatorios'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Construir el mensaje del correo
+        email_subject = f"Contacto Web: {asunto}"
+        email_body = f"""
+        Nuevo mensaje de contacto desde el sitio web:
+        
+        Nombre: {nombre}
+        Email: {email}
+        Teléfono: {telefono if telefono else 'No proporcionado'}
+        Asunto: {asunto}
+        
+        Mensaje:
+        {mensaje}
+        
+        ---
+        Este correo fue enviado desde el formulario de contacto del sitio web.
+        """
+
+        # Enviar correo
+        send_mail(
+            subject=email_subject,
+            message=email_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[settings.CONTACT_EMAIL],  # Email del negocio
+            fail_silently=False,
+        )
+
+        # También enviar correo de confirmación al cliente
+        confirmation_subject = "Gracias por contactarnos - Impresores"
+        confirmation_body = f"""
+        Hola {nombre},
+        
+        Hemos recibido tu mensaje y nos pondremos en contacto contigo lo antes posible.
+        
+        Resumen de tu consulta:
+        Asunto: {asunto}
+        Mensaje: {mensaje}
+        
+        Gracias por tu interés en nuestros servicios de impresión.
+        
+        Atentamente,
+        Equipo de Impresores
+        
+        ---
+        Si no realizaste esta consulta, por favor ignora este correo.
+        """
+
+        send_mail(
+            subject=confirmation_subject,
+            message=confirmation_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=True,  # No fallar si este correo no se envía
+        )
+
+        logger.info(f"Correo de contacto enviado exitosamente desde {email}")
+        
+        return Response(
+            {'message': 'Mensaje enviado exitosamente'},
+            status=status.HTTP_200_OK
+        )
+
+    except Exception as e:
+        logger.error(f"Error al enviar correo de contacto: {str(e)}")
+        return Response(
+            {'message': 'Error al enviar el mensaje. Por favor intenta nuevamente.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
