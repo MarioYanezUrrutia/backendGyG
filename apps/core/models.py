@@ -8,6 +8,7 @@ from django.conf import settings
 import io
 from django.core.files.base import ContentFile
 
+
 class BaseModel(models.Model):
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -593,14 +594,14 @@ class Producto(BaseModel):
     sku = models.CharField(max_length=50, null=True, blank=True, unique=True)
     
     # Precios e impuestos
-    precio_neto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    precio_venta = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    precio_neto = models.IntegerField(default=0, null=True, blank=True)
+    precio_venta = models.IntegerField(default=0, null=True, blank=True)
     iva = models.BooleanField(default=True)
     impuesto_adicional = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Porcentaje de impuesto adicional")
     
     # Ofertas
     es_oferta = models.BooleanField(default=False)
-    precio_oferta = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_oferta = models.IntegerField(default=0, null=True, blank=True)
     fecha_inicio_oferta = models.DateTimeField(null=True, blank=True)
     fecha_fin_oferta = models.DateTimeField(null=True, blank=True)
     
@@ -948,3 +949,294 @@ class ImagenProducto(BaseModel):
                     
             except Exception as e:
                 print(f"Error procesando imagen {self.pk}: {e}")
+
+# ============= MODELOS WEB 3.0+ (SISTEMA INTELIGENTE) =============
+
+# class HistorialNavegacion(BaseModel):
+#     """Registra cada interacción del usuario con el sitio."""
+#     historial_id = models.AutoField(primary_key=True)
+#     user_profile = models.ForeignKey(
+#         UserProfile, 
+#         on_delete=models.CASCADE, 
+#         related_name='historial_navegacion',
+#         null=True,
+#         blank=True
+#     )
+#     sesion_id = models.CharField(
+#         max_length=100, 
+#         help_text="ID de sesión para usuarios no autenticados"
+#     )
+    
+#     # Tipo de interacción
+#     TIPOS_INTERACCION = [
+#         ('product_view', 'Vista de producto'),
+#         ('category_visit', 'Visita a categoría'),
+#         ('search', 'Búsqueda'),
+#         ('add_to_cart', 'Agregar al carrito'),
+#         ('remove_from_cart', 'Quitar del carrito'),
+#         ('purchase', 'Compra'),
+#         ('wishlist_add', 'Agregar a favoritos'),
+#         ('scroll', 'Scroll en página'),
+#         ('time_on_page', 'Tiempo en página'),
+#     ]
+#     tipo_interaccion = models.CharField(max_length=30, choices=TIPOS_INTERACCION)
+    
+#     # Datos de la interacción (JSON flexible)
+#     datos_interaccion = models.JSONField(
+#         null=True,
+#         blank=True,
+#         help_text="Datos específicos: producto_id, categoria, query, tiempo, etc."
+#     )
+    
+#     # Producto relacionado (si aplica)
+#     producto = models.ForeignKey(
+#         Producto,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name='historial_vistas'
+#     )
+    
+#     # Categoría relacionada (si aplica)
+#     categoria = models.ForeignKey(
+#         Categoria,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name='historial_visitas'
+#     )
+    
+#     # Metadata
+#     timestamp = models.DateTimeField(auto_now_add=True)
+#     ip_address = models.GenericIPAddressField(null=True, blank=True)
+#     user_agent = models.TextField(null=True, blank=True)
+#     duracion_segundos = models.IntegerField(
+#         null=True, 
+#         blank=True,
+#         help_text="Duración de la interacción en segundos"
+#     )
+    
+#     class Meta:
+#         db_table = 'historial_navegacion'
+#         verbose_name = 'Historial de Navegación'
+#         verbose_name_plural = 'Historial de Navegación'
+#         ordering = ['-timestamp']
+#         indexes = [
+#             models.Index(fields=['user_profile', '-timestamp']),
+#             models.Index(fields=['sesion_id', '-timestamp']),
+#             models.Index(fields=['tipo_interaccion', '-timestamp']),
+#             models.Index(fields=['producto', '-timestamp']),
+#         ]
+
+#     def __str__(self):
+#         user_str = str(self.user_profile) if self.user_profile else f"Sesión: {self.sesion_id[:8]}"
+#         return f"{user_str} - {self.get_tipo_interaccion_display()} - {self.timestamp}"
+
+# class PerfilComportamiento(BaseModel):
+#     """Almacena el perfil de comportamiento agregado del usuario."""
+#     perfil_id = models.AutoField(primary_key=True)
+#     user_profile = models.OneToOneField(
+#         UserProfile,
+#         on_delete=models.CASCADE,
+#         related_name='perfil_comportamiento'
+#     )
+    
+#     # Categorías favoritas (JSON con contadores)
+#     categorias_favoritas = models.JSONField(
+#         default=dict,
+#         help_text="{'categoria_id': count, ...}"
+#     )
+    
+#     # Productos vistos recientemente (lista de IDs)
+#     productos_vistos_recientes = models.JSONField(
+#         default=list,
+#         help_text="[producto_id1, producto_id2, ...] últimos 50"
+#     )
+    
+#     # Rango de precios preferido
+#     precio_minimo_promedio = models.IntegerField(default=0)
+#     precio_maximo_promedio = models.IntegerField(default=999999)
+#     precio_promedio_productos_vistos = models.IntegerField(default=0)
+    
+#     # Patrones temporales
+#     hora_preferida_navegacion = models.IntegerField(
+#         null=True,
+#         blank=True,
+#         help_text="Hora del día (0-23) con más actividad"
+#     )
+#     dia_semana_preferido = models.IntegerField(
+#         null=True,
+#         blank=True,
+#         help_text="Día de la semana (0=Lunes, 6=Domingo)"
+#     )
+    
+#     # Métricas de engagement
+#     total_productos_vistos = models.IntegerField(default=0)
+#     total_busquedas = models.IntegerField(default=0)
+#     total_items_carrito = models.IntegerField(default=0)
+#     total_compras = models.IntegerField(default=0)
+#     tiempo_total_navegacion_segundos = models.IntegerField(default=0)
+    
+#     # Últimas interacciones
+#     ultima_visita = models.DateTimeField(auto_now=True)
+#     productos_comprados_ids = models.JSONField(
+#         default=list,
+#         help_text="IDs de productos que ha comprado"
+#     )
+    
+#     # Score de actividad (0-100)
+#     score_actividad = models.IntegerField(
+#         default=0,
+#         help_text="Score calculado basado en interacciones"
+#     )
+    
+#     class Meta:
+#         db_table = 'perfiles_comportamiento'
+#         verbose_name = 'Perfil de Comportamiento'
+#         verbose_name_plural = 'Perfiles de Comportamiento'
+
+#     def __str__(self):
+#         return f"Perfil de {self.user_profile}"
+    
+#     def actualizar_perfil(self):
+#         """
+#         Recalcula el perfil basado en el historial.
+#         Este método se debe llamar periódicamente o después de interacciones importantes.
+#         """
+#         from django.db.models import Count, Avg, Sum
+#         from collections import Counter
+        
+#         historial = HistorialNavegacion.objects.filter(
+#             user_profile=self.user_profile
+#         ).select_related('producto', 'categoria')
+        
+#         # Actualizar categorías favoritas
+#         categorias_counter = Counter()
+#         for item in historial.filter(categoria__isnull=False):
+#             categorias_counter[item.categoria.categoria_id] += 1
+#         self.categorias_favoritas = dict(categorias_counter.most_common(10))
+        
+#         # Productos vistos recientes (últimos 50)
+#         productos_recientes = historial.filter(
+#             tipo_interaccion='product_view',
+#             producto__isnull=False
+#         ).values_list('producto_id', flat=True)[:50]
+#         self.productos_vistos_recientes = list(productos_recientes)
+        
+#         # Calcular rango de precios
+#         productos_vistos = historial.filter(
+#             tipo_interaccion='product_view',
+#             producto__isnull=False
+#         ).values_list('producto__precio_venta', flat=True)
+        
+#         if productos_vistos:
+#             precios = [p for p in productos_vistos if p]
+#             if precios:
+#                 self.precio_minimo_promedio = int(min(precios) * 0.8)
+#                 self.precio_maximo_promedio = int(max(precios) * 1.2)
+#                 self.precio_promedio_productos_vistos = int(sum(precios) / len(precios))
+        
+#         # Métricas de engagement
+#         self.total_productos_vistos = historial.filter(tipo_interaccion='product_view').count()
+#         self.total_busquedas = historial.filter(tipo_interaccion='search').count()
+#         self.total_items_carrito = historial.filter(tipo_interaccion='add_to_cart').count()
+        
+#         # Calcular tiempo total
+#         tiempo_total = historial.aggregate(
+#             total=Sum('duracion_segundos')
+#         )['total'] or 0
+#         self.tiempo_total_navegacion_segundos = tiempo_total
+        
+#         # Calcular score de actividad (algoritmo simple)
+#         self.score_actividad = min(100, (
+#             (self.total_productos_vistos * 2) +
+#             (self.total_busquedas * 3) +
+#             (self.total_items_carrito * 5) +
+#             (self.total_compras * 10)
+#         ))
+        
+#         self.save()
+
+# class SimilitudUsuarios(BaseModel):
+#     """Almacena similitudes entre usuarios para collaborative filtering."""
+#     similitud_id = models.AutoField(primary_key=True)
+#     user_profile_a = models.ForeignKey(
+#         UserProfile,
+#         on_delete=models.CASCADE,
+#         related_name='similitudes_como_a'
+#     )
+#     user_profile_b = models.ForeignKey(
+#         UserProfile,
+#         on_delete=models.CASCADE,
+#         related_name='similitudes_como_b'
+#     )
+    
+#     # Score de similitud (0-100)
+#     score_similitud = models.FloatField(
+#         default=0,
+#         help_text="Score de similitud calculado (0-100)"
+#     )
+    
+#     # Factores de similitud
+#     categorias_comunes = models.IntegerField(default=0)
+#     productos_comunes_vistos = models.IntegerField(default=0)
+#     rango_precio_similar = models.BooleanField(default=False)
+    
+#     # Timestamp de cálculo
+#     fecha_calculo = models.DateTimeField(auto_now=True)
+    
+#     class Meta:
+#         db_table = 'similitudes_usuarios'
+#         verbose_name = 'Similitud entre Usuarios'
+#         verbose_name_plural = 'Similitudes entre Usuarios'
+#         unique_together = ['user_profile_a', 'user_profile_b']
+#         indexes = [
+#             models.Index(fields=['user_profile_a', '-score_similitud']),
+#             models.Index(fields=['score_similitud']),
+#         ]
+
+#     def __str__(self):
+#         return f"{self.user_profile_a} ↔ {self.user_profile_b} (Score: {self.score_similitud:.1f})"
+    
+#     @classmethod
+#     def calcular_similitud(cls, user_a, user_b):
+#         """
+#         Calcula la similitud entre dos usuarios basado en sus perfiles de comportamiento.
+#         """
+#         try:
+#             perfil_a = user_a.perfil_comportamiento
+#             perfil_b = user_b.perfil_comportamiento
+#         except PerfilComportamiento.DoesNotExist:
+#             return 0
+        
+#         score = 0
+        
+#         # 1. Categorías comunes (peso: 40 puntos)
+#         cats_a = set(perfil_a.categorias_favoritas.keys())
+#         cats_b = set(perfil_b.categorias_favoritas.keys())
+#         categorias_comunes = len(cats_a & cats_b)
+#         if categorias_comunes > 0:
+#             score += min(categorias_comunes * 10, 40)
+        
+#         # 2. Productos vistos en común (peso: 30 puntos)
+#         prods_a = set(perfil_a.productos_vistos_recientes)
+#         prods_b = set(perfil_b.productos_vistos_recientes)
+#         productos_comunes = len(prods_a & prods_b)
+#         if productos_comunes > 0:
+#             score += min(productos_comunes * 5, 30)
+        
+#         # 3. Rango de precio similar (peso: 20 puntos)
+#         if perfil_a.precio_promedio_productos_vistos > 0 and perfil_b.precio_promedio_productos_vistos > 0:
+#             diff_precio = abs(perfil_a.precio_promedio_productos_vistos - perfil_b.precio_promedio_productos_vistos)
+#             precio_promedio = (perfil_a.precio_promedio_productos_vistos + perfil_b.precio_promedio_productos_vistos) / 2
+#             if precio_promedio > 0:
+#                 similitud_precio = max(0, 1 - (diff_precio / precio_promedio))
+#                 score += similitud_precio * 20
+        
+#         # 4. Nivel de actividad similar (peso: 10 puntos)
+#         diff_actividad = abs(perfil_a.score_actividad - perfil_b.score_actividad)
+#         similitud_actividad = max(0, 1 - (diff_actividad / 100))
+#         score += similitud_actividad * 10
+        
+#         return round(score, 2)
+    
